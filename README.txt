@@ -16,9 +16,22 @@ with the distance in yards, when ALL of these are true:
     (equipping a trinket starts a 30 second cooldown, so shorter ones
     would run out first)
 
+What you see, from top to bottom:
+
+  - The Disease or Poison that Luffa would remove, with a coloured border and
+    its time left, so you can tell why the addon popped up.
+  - The Luffa icon. CLICK IT to equip Luffa. Do this on your way to the water,
+    so the 30 second equip cooldown runs out while you travel.
+  - A gold arrow pointing at the nearest water.
+  - What to do next: equip Luffa, how long until it is ready, and how far the
+    water is. Once you are in water and Luffa is ready it tells you to use it.
+
 Once Luffa is equipped the 45 second rule no longer applies, so the icon stays
-up while you travel. When you are in water the arrow is replaced by a message
-telling you to use Luffa.
+up while you travel.
+
+Luffa goes into your top trinket slot. If you also use SurfNTurf, it goes into
+whichever trinket slot SurfNTurf is not using. /luffa slot changes this. The
+addon does not put your old trinket back afterwards.
 
 
 INSTALL
@@ -46,6 +59,8 @@ There is nothing to set up. The icon appears by itself when it is needed.
 
   /luffa test     Preview the icon and arrow. Hold Shift and drag the icon to
                   move it. Type it again to turn the preview off.
+  /luffa slot     Choose which trinket slot Luffa is equipped into
+                  (automatic, top or bottom).
   /luffa bad      Hide the spot the arrow is pointing at, and anything within
                   30 yards of it. Use this if there is no usable water there.
   /luffa reset    Bring back every spot you hid.

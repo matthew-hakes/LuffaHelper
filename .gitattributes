@@ -3,3 +3,4 @@
 .gitattributes export-ignore
 water-tools export-ignore
 .gitignore export-ignore
+*.tga binary

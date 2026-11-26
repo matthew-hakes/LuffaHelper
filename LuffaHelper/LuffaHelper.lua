@@ -13,7 +13,12 @@
 -- fountains, moonwells, puddles and cave pools are left out. On top of
 -- that, every place you swim is remembered (account-wide), "/luffa mark" adds
 -- the spot you stand on, and "/luffa bad" hides a spot that turned out wrong.
+--
+-- On screen, top to bottom: the Disease/Poison icons Luffa would remove, the
+-- Luffa icon (click it to equip Luffa and start its 30 second equip cooldown
+-- while you travel), a gold arrow to the water, and what to do next.
 
+local ADDON_NAME = ...
 local LUFFA_ID = 19141
 local LUFFA_ICON = 132911        -- inv_fabric_wool_01
 local MIN_REMAINING = 45         -- seconds; trinket equip cooldown is 30
@@ -96,21 +101,54 @@ local function LuffaCooldownLeft()
     return 0
 end
 
--- Returns the name and seconds left of a Disease/Poison lasting longer than `need`.
-local function FindCurable(need)
-    if not (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return nil end
+-- Fills `curables` with every Disease/Poison on the player and returns the
+-- longest time left among them (0 if there are none).
+-- Each entry: { name, icon, kind ("Disease"/"Poison"), left (seconds) }.
+local curables, curableCount = {}, 0
+local function ScanCurables()
+    curableCount = 0
+    local longest = 0
+    if not (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return 0 end
     for i = 1, 40 do
         local aura = C_UnitAuras.GetAuraDataByIndex("player", i, "HARMFUL")
         if not aura then break end
         if CURABLE[aura.dispelName] then
             local expires = aura.expirationTime or 0
             local left = (expires > 0) and (expires - GetTime()) or math.huge
-            if left > need then
-                return aura.name, left
+            curableCount = curableCount + 1
+            local entry = curables[curableCount] or {}
+            curables[curableCount] = entry
+            entry.name, entry.icon, entry.kind, entry.left = aura.name, aura.icon, aura.dispelName, left
+            if left > longest then
+                longest = left
+                -- Keep the longest one first: it is the reason the icon is up.
+                curables[curableCount], curables[1] = curables[1], entry
             end
         end
     end
-    return nil
+    return longest
+end
+
+-- Trinket slot Luffa is equipped into (13 = top, 14 = bottom). "/luffa slot"
+-- sets it. Otherwise it avoids the slot SurfNTurf manages, and defaults to top.
+local function LuffaSlot()
+    local chosen = DB().slot
+    if chosen == 13 or chosen == 14 then return chosen end
+    if type(SurfNTurfDB) == "table" and SurfNTurfDB.trinketSlot == 13 then return 14 end
+    return 13
+end
+
+local function EquipLuffa()
+    if InCombat() then
+        Print("trinkets can't be swapped in combat.")
+    elseif LuffaEquipped() then
+        Print("Luffa is already equipped.")
+    elseif not HasLuffa() then
+        Print("Luffa is not in your bags.")
+    else
+        local equip = EquipItemByName or (C_Item and C_Item.EquipItemByName)
+        if equip then equip(LUFFA_ID, LuffaSlot()) end
+    end
 end
 
 ------------------------------------------------------------------------------
@@ -221,7 +259,8 @@ end
 -- Display
 ------------------------------------------------------------------------------
 
-local frame = CreateFrame("Frame", "LuffaHelperFrame", UIParent)
+-- The Luffa icon is a button: click it to equip Luffa, shift-drag to move it.
+local frame = CreateFrame("Button", "LuffaHelperFrame", UIParent)
 frame:SetSize(52, 52)
 frame:SetPoint("CENTER", UIParent, "CENTER", 0, 160)
 frame:SetFrameStrata("HIGH")
@@ -229,10 +268,29 @@ frame:SetClampedToScreen(true)
 frame:SetMovable(true)
 frame:EnableMouse(true)
 frame:RegisterForDrag("LeftButton")
+frame:RegisterForClicks("LeftButtonUp")
 frame:Hide()
 
+frame:SetScript("OnClick", function()
+    if not IsShiftKeyDown() then EquipLuffa() end
+end)
+frame:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Luffa Helper")
+    GameTooltip:AddLine("Click to equip Luffa.", 1, 1, 1)
+    GameTooltip:AddLine("Shift-drag to move.", 1, 1, 1)
+    GameTooltip:Show()
+end)
+frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
 frame:SetScript("OnDragStart", function(self)
-    if IsShiftKeyDown() then self:StartMoving() end
+    if IsShiftKeyDown() then
+        self:StartMoving()
+    else
+        -- A click where the mouse slipped a little counts as a drag, and the
+        -- game then skips OnClick, so treat it as the click it was meant to be.
+        EquipLuffa()
+    end
 end)
 frame:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
@@ -266,35 +324,82 @@ icon:SetTexture(LUFFA_ICON)
 icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 frame.icon = icon
 
--- Arrow below the icon, drawn with three lines so no image file is needed.
+-- Arrow below the icon: a gold quest-style arrow image (Arrow.tga, drawn
+-- pointing up) that is rotated to point at the water.
 local arrowBox = CreateFrame("Frame", nil, frame)
-arrowBox:SetSize(52, 52)
-arrowBox:SetPoint("TOP", frame, "BOTTOM", 0, -8)
+arrowBox:SetSize(56, 56)
+arrowBox:SetPoint("TOP", frame, "BOTTOM", 0, -6)
 
-local function NewLine()
-    local line = arrowBox:CreateLine(nil, "OVERLAY")
-    line:SetColorTexture(0.3, 0.85, 1, 1)
-    line:SetThickness(5)
-    return line
-end
-local shaft, wingA, wingB = NewLine(), NewLine(), NewLine()
+local arrow = arrowBox:CreateTexture(nil, "OVERLAY")
+arrow:SetAllPoints(arrowBox)
+arrow:SetTexture("Interface\\AddOns\\" .. ADDON_NAME .. "\\Arrow.tga")
 
 -- rotation: radians, counter-clockwise, 0 = straight ahead (up on screen).
 local function PointArrow(rotation)
-    local function dir(r, len) return -math.sin(r) * len, math.cos(r) * len end
-    local tipX, tipY = dir(rotation, 22)
-    local ax, ay = dir(rotation + 0.55, 16)
-    local bx, by = dir(rotation - 0.55, 16)
-    shaft:SetStartPoint("CENTER", arrowBox, -tipX, -tipY)
-    shaft:SetEndPoint("CENTER", arrowBox, tipX, tipY)
-    wingA:SetStartPoint("CENTER", arrowBox, tipX, tipY)
-    wingA:SetEndPoint("CENTER", arrowBox, tipX - ax, tipY - ay)
-    wingB:SetStartPoint("CENTER", arrowBox, tipX, tipY)
-    wingB:SetEndPoint("CENTER", arrowBox, tipX - bx, tipY - by)
+    arrow:SetRotation(rotation)
 end
 
 local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-label:SetWidth(260)
+label:SetWidth(320)
+
+-- Above the icon: the Diseases and Poisons Luffa would remove, each with a
+-- border in its debuff colour and its time left, under a caption naming it.
+local DEBUFF_SIZE, DEBUFF_GAP, MAX_DEBUFFS = 34, 8, 4
+local KIND_COLOR = { Disease = { 0.72, 0.48, 0.05 }, Poison = { 0.1, 0.75, 0.1 } }
+local debuffRow = CreateFrame("Frame", nil, frame)
+debuffRow:SetSize(DEBUFF_SIZE, DEBUFF_SIZE)
+debuffRow:SetPoint("BOTTOM", frame, "TOP", 0, 16)
+
+local caption = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+caption:SetPoint("BOTTOM", debuffRow, "TOP", 0, 6)
+caption:SetWidth(320)
+
+local debuffSlots = {}
+local function DebuffSlot(i)
+    local slot = debuffSlots[i]
+    if slot then return slot end
+    slot = CreateFrame("Frame", nil, debuffRow)
+    slot:SetSize(DEBUFF_SIZE, DEBUFF_SIZE)
+    slot:SetPoint("LEFT", debuffRow, "LEFT", (i - 1) * (DEBUFF_SIZE + DEBUFF_GAP), 0)
+    slot.border = slot:CreateTexture(nil, "BACKGROUND")
+    slot.border:SetPoint("TOPLEFT", slot, "TOPLEFT", -3, 3)
+    slot.border:SetPoint("BOTTOMRIGHT", slot, "BOTTOMRIGHT", 3, -3)
+    slot.icon = slot:CreateTexture(nil, "ARTWORK")
+    slot.icon:SetAllPoints(slot)
+    slot.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    slot.time = slot:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+    slot.time:SetPoint("BOTTOMRIGHT", slot, "BOTTOMRIGHT", -1, 2)
+    debuffSlots[i] = slot
+    return slot
+end
+
+local function ShowDebuffs()
+    local shown = math.min(curableCount, MAX_DEBUFFS)
+    for i = 1, shown do
+        local entry, slot = curables[i], DebuffSlot(i)
+        local color = KIND_COLOR[entry.kind] or KIND_COLOR.Disease
+        slot.border:SetColorTexture(color[1], color[2], color[3], 1)
+        slot.icon:SetTexture(entry.icon or 134400)
+        if entry.left == math.huge then
+            slot.time:SetText("")
+        elseif entry.left >= 60 then
+            slot.time:SetFormattedText("%dm", math.ceil(entry.left / 60))
+        else
+            slot.time:SetFormattedText("%d", math.max(0, math.ceil(entry.left)))
+        end
+        slot:Show()
+    end
+    for i = shown + 1, #debuffSlots do debuffSlots[i]:Hide() end
+    debuffRow:SetShown(shown > 0)
+    caption:SetShown(shown > 0)
+    if shown > 0 then
+        debuffRow:SetWidth(shown * DEBUFF_SIZE + (shown - 1) * DEBUFF_GAP)
+        local first = curables[1]
+        local text = ("%s: %s"):format(first.kind or "Disease", first.name or "?")
+        if curableCount > 1 then text = text .. (" (+%d more)"):format(curableCount - 1) end
+        caption:SetText(text)
+    end
+end
 
 local function ShowArrow(shown)
     arrowBox:SetShown(shown)
@@ -315,14 +420,36 @@ local ARRIVE_RADIUS = 6          -- yards; closer than this counts as "at the sp
 local target = {}                -- north, west, inst, time of the current spot
 
 local function ShouldShow()
-    if forced then return true end
+    if forced then
+        -- Preview: scan real debuffs if out of combat, else show an example one.
+        if not InCombat() then ScanCurables() else curableCount = 0 end
+        if curableCount == 0 then
+            curableCount = 1
+            local entry = curables[1] or {}
+            curables[1] = entry
+            entry.name, entry.icon, entry.kind, entry.left = "Example Disease", 134400, "Disease", 120
+        end
+        return true
+    end
     if InCombat() or not HasLuffa() then return false end
     -- The 45 second rule only matters while Luffa is still in the bags. Once it
     -- is equipped, the debuff just has to outlast the remaining cooldown, so the
     -- icon stays up while you travel to water.
     local need = LuffaCooldownLeft() + COOLDOWN_MARGIN
     if not LuffaEquipped() then need = math.max(MIN_REMAINING, need) end
-    return FindCurable(need) ~= nil
+    return ScanCurables() > need
+end
+
+-- First line of the label: what to do about Luffa itself right now.
+local function LuffaLine(inWater)
+    if not LuffaEquipped() then
+        return "|cff40ff40Click the icon to equip Luffa|r"
+    end
+    local cd = LuffaCooldownLeft()
+    if cd > 0 then
+        return ("Luffa ready in %ds"):format(math.ceil(cd))
+    end
+    return inWater and "|cff40ff40Use Luffa now!|r" or "Luffa is ready"
 end
 
 local function Refresh()
@@ -331,25 +458,20 @@ local function Refresh()
         return
     end
     frame:Show()
+    ShowDebuffs()
 
     if InWater() then
         ShowArrow(false)
-        local cd = LuffaCooldownLeft()
-        if cd > 0 then
-            label:SetFormattedText("In water - Luffa ready in %ds", math.ceil(cd))
-        elseif LuffaEquipped() then
-            label:SetText("In water - use Luffa!")
-        else
-            label:SetText("In water - equip and use Luffa!")
-        end
+        label:SetText(LuffaLine(true) .. "\nYou are in water")
         return
     end
 
+    local luffaLine = LuffaLine(false)
     local north, west, inst = PlayerPos()
     local facing = GetPlayerFacing and GetPlayerFacing()
     if not north or type(facing) ~= "number" then
         ShowArrow(false)
-        label:SetText("Luffa: find water")
+        label:SetText(luffaLine .. "\nFind water")
         return
     end
 
@@ -363,7 +485,7 @@ local function Refresh()
     local spotN, spotW = target.north, target.west
     if not spotN then
         ShowArrow(false)
-        label:SetText("Luffa: no water known nearby")
+        label:SetText(luffaLine .. "\nNo water known nearby")
         return
     end
 
@@ -371,14 +493,14 @@ local function Refresh()
     local dist = math.sqrt(dn * dn + dw * dw)
     if dist < ARRIVE_RADIUS then
         ShowArrow(false)
-        label:SetText("Water is right here - step in\n(/luffa bad if there is none)")
+        label:SetText(luffaLine .. "\nWater is right here - step in\n(/luffa bad if there is none)")
         return
     end
 
     -- Bearing to the spot, counter-clockwise from north, same as GetPlayerFacing.
     PointArrow(math.atan2(dw, dn) - facing)
     ShowArrow(true)
-    label:SetFormattedText("Water: %d yd", dist)
+    label:SetText(("%s\nWater: %d yd"):format(luffaLine, dist))
 end
 
 local function Learn()
@@ -473,7 +595,15 @@ SlashCmdList["LUFFAHELPER"] = function(msg)
         target.time = nil
         Print("all hidden spots are back.")
 
+    elseif cmd == "slot" then
+        -- Cycle: automatic -> top -> bottom -> automatic
+        local db = DB()
+        if db.slot == 13 then db.slot = 14 elseif db.slot == 14 then db.slot = nil else db.slot = 13 end
+        Print(("clicking the icon equips Luffa in the %s trinket slot%s."):format(
+            LuffaSlot() == 13 and "top" or "bottom", db.slot and "" or " (automatic)"))
+
     elseif cmd == "status" then
+        Print(("Luffa equips into the %s trinket slot."):format(LuffaSlot() == 13 and "top" or "bottom"))
         local preloaded = 0
         for _, tiles in pairs(LuffaHelperWater or {}) do
             for _, list in pairs(tiles) do preloaded = preloaded + #list end
@@ -489,6 +619,7 @@ SlashCmdList["LUFFAHELPER"] = function(msg)
     else
         Print("commands:")
         print("  /luffa test - preview the icon and arrow (shift-drag to move)")
+        print("  /luffa slot - choose which trinket slot Luffa is equipped into")
         print("  /luffa bad - hide the spot the arrow points at (no water there)")
         print("  /luffa reset - bring back all hidden spots")
         print("  /luffa mark - save a water spot where you stand")
