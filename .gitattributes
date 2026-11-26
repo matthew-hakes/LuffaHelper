@@ -1,0 +1,5 @@
+# Keep repo plumbing out of GitHub's "Download ZIP" so it only holds the addon and README.
+.github export-ignore
+.gitattributes export-ignore
+water-tools export-ignore
+.gitignore export-ignore
