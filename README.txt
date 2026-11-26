@@ -30,8 +30,12 @@ Once Luffa is equipped the 45 second rule no longer applies, so the icon stays
 up while you travel.
 
 Luffa goes into your top trinket slot. If you also use SurfNTurf, it goes into
-whichever trinket slot SurfNTurf is not using. /luffa slot changes this. The
-addon does not put your old trinket back afterwards.
+whichever trinket slot SurfNTurf is not using. /luffa slot changes this.
+
+When you equip Luffa by clicking the icon, the addon remembers the trinket it
+replaced and puts it back once Luffa has been used, or once the Disease or
+Poison is gone. It waits until you are out of combat. If the slot was empty,
+or you equipped Luffa by hand, it leaves Luffa where it is.
 
 
 INSTALL

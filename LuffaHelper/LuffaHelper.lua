@@ -43,7 +43,13 @@ local function DB()
     if type(LuffaHelperDB) ~= "table" then LuffaHelperDB = {} end
     if type(LuffaHelperDB.spots) ~= "table" then LuffaHelperDB.spots = {} end
     if type(LuffaHelperDB.bad) ~= "table" then LuffaHelperDB.bad = {} end
+    if type(LuffaHelperDB.restore) ~= "table" then LuffaHelperDB.restore = {} end
     return LuffaHelperDB
+end
+
+-- Saved data is shared by all characters; the trinket to put back is not.
+local function CharKey()
+    return (UnitName("player") or "?") .. "-" .. (GetRealmName and GetRealmName() or "")
 end
 
 ------------------------------------------------------------------------------
@@ -147,7 +153,56 @@ local function EquipLuffa()
         Print("Luffa is not in your bags.")
     else
         local equip = EquipItemByName or (C_Item and C_Item.EquipItemByName)
-        if equip then equip(LUFFA_ID, LuffaSlot()) end
+        if not equip then return end
+        -- Remember the trinket being replaced so it can be put back afterwards.
+        local slot = LuffaSlot()
+        local old = GetInventoryItemLink and GetInventoryItemLink("player", slot)
+        DB().restore[CharKey()] = old and {
+            slot = slot, link = old, time = GetTime(), lastCd = LuffaCooldownLeft(),
+        } or nil
+        equip(LUFFA_ID, slot)
+    end
+end
+
+-- Puts the remembered trinket back once Luffa has done its job: either it was
+-- used (its cooldown jumps to the 5 minute use cooldown) or no Disease/Poison
+-- is left. Runs about once a second, out of combat only.
+local function RestoreTrinket()
+    local key = CharKey()
+    local pending = DB().restore[key]
+    -- Gear can't be changed in combat or while dead (death also clears debuffs).
+    if not pending or InCombat() or (UnitIsDeadOrGhost and UnitIsDeadOrGhost("player")) then return end
+    local now = GetTime()
+    if GetInventoryItemID("player", pending.slot) ~= LUFFA_ID then
+        -- Luffa is not in the slot: either the old trinket is back (or the
+        -- player changed it), or the equip never went through.
+        if pending.seen or now - pending.time > 10 or now < pending.time then
+            DB().restore[key] = nil
+        end
+        return
+    end
+    pending.seen = true
+    local cd = LuffaCooldownLeft()
+    -- The equip cooldown is 30 seconds, so a jump to over 60 means Luffa was used.
+    local used = cd > 60 and cd > (pending.lastCd or 0) + 31
+    pending.lastCd = cd
+    if used then pending.used = true end
+    if pending.used or ScanCurables() == 0 then
+        -- The old trinket is gone (sold, banked, destroyed): forget it.
+        local count = (C_Item and C_Item.GetItemCount or GetItemCount)(pending.link)
+        if (count or 0) == 0 then
+            DB().restore[key] = nil
+            return
+        end
+        -- If the game refuses the swap (casting, item locked), wait before retrying.
+        if pending.tryAt and now < pending.tryAt and now > pending.tryAt - 6 then return end
+        pending.tryAt = now + 5
+        local equip = EquipItemByName or (C_Item and C_Item.EquipItemByName)
+        if equip then equip(pending.link, pending.slot) end
+        if not pending.told then
+            pending.told = true
+            Print("putting " .. pending.link .. " back.")
+        end
     end
 end
 
@@ -541,6 +596,8 @@ driver:SetScript("OnUpdate", function(_, elapsed)
 
     if sinceLearn >= LEARN_EVERY then
         sinceLearn = 0
+        local okRestore, errRestore = pcall(RestoreTrinket)
+        if not okRestore then lastError = errRestore end
         local okLearn, errLearn = pcall(Learn)
         if not okLearn then lastError = errLearn end
     end
