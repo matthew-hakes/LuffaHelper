@@ -24,22 +24,19 @@ telling you to use Luffa.
 INSTALL
 -------
 
-1. On the GitHub page click the green "Code" button, then "Download ZIP".
-2. Unzip it.
-3. Copy the LuffaHelper-main folder (the one with LuffaHelper.lua directly
-   inside it) into your AddOns folder:
+1. Download LuffaHelper.zip:
+
+    https://github.com/matthew-hakes/LuffaHelper/releases/latest/download/LuffaHelper.zip
+
+   (The green "Code" button, then "Download ZIP", works too.)
+2. Unzip it. Inside you will find this README and a folder named LuffaHelper.
+3. Drag the LuffaHelper folder into your AddOns folder:
 
        World of Warcraft\_forever_\Interface\AddOns
 
-   You do not need to rename it. The addon loads from a folder named either
-   LuffaHelper-main or LuffaHelper. Only keep one of them, not both.
+   Do not rename it, and leave this README out.
 4. Restart the game (or log out to character select) and make sure LuffaHelper
    is ticked in the AddOns list.
-
-There is also a ready-made LuffaHelper.zip (folder already named LuffaHelper)
-here:
-
-    https://github.com/matthew-hakes/LuffaHelper/releases/latest/download/LuffaHelper.zip
 
 
 USING IT
