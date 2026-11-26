@@ -21,7 +21,11 @@ What you see, from top to bottom:
   - The Disease or Poison that Luffa would remove, with a coloured border and
     its time left, so you can tell why the addon popped up.
   - The Luffa icon. CLICK IT to equip Luffa. Do this on your way to the water,
-    so the 30 second equip cooldown runs out while you travel.
+    so the 30 second equip cooldown runs out while you travel. The icon shows
+    the usual clockwise cooldown sweep while you wait. When Luffa is ready the
+    border turns green, and CLICKING THE ICON AGAIN USES LUFFA. Get in the
+    water first: used on dry land it only removes one Bleed and still goes on
+    its 5 minute cooldown.
   - A gold arrow pointing at the nearest water.
   - What to do next: equip Luffa, how long until it is ready, and how far the
     water is. Once you are in water and Luffa is ready it tells you to use it.

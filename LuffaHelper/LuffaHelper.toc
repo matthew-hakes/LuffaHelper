@@ -2,7 +2,7 @@
 ## Title: LuffaHelper
 ## Notes: Out of combat, shows a Luffa reminder and an arrow to the nearest water when you have a long Disease or Poison.
 ## Author: Matthew Hakes
-## Version: 1.3.0
+## Version: 1.4.0
 ## SavedVariables: LuffaHelperDB
 
 Water_0.lua

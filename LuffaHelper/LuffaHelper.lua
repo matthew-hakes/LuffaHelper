@@ -94,7 +94,8 @@ local function HasLuffa()
     return (count or 0) > 0
 end
 
-local function LuffaCooldownLeft()
+-- Luffa's item cooldown as (start time, length in seconds); 0, 0 when ready.
+local function LuffaCooldown()
     local start, duration
     if C_Container and C_Container.GetItemCooldown then
         start, duration = C_Container.GetItemCooldown(LUFFA_ID)
@@ -102,9 +103,14 @@ local function LuffaCooldownLeft()
         start, duration = GetItemCooldown(LUFFA_ID)
     end
     if start and duration and start > 0 and duration > 0 then
-        return math.max(0, start + duration - GetTime())
+        return start, duration
     end
-    return 0
+    return 0, 0
+end
+
+local function LuffaCooldownLeft()
+    local start, duration = LuffaCooldown()
+    return math.max(0, start + duration - GetTime())
 end
 
 -- Fills `curables` with every Disease/Poison on the player and returns the
@@ -379,6 +385,82 @@ icon:SetTexture(LUFFA_ICON)
 icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 frame.icon = icon
 
+-- The game's own clockwise cooldown sweep (with its timer) over the icon.
+local cooldown = CreateFrame("Cooldown", nil, frame, "CooldownFrameTemplate")
+cooldown:SetAllPoints(frame)
+local shownStart, shownDuration = 0, 0
+local function ShowCooldown()
+    local start, duration = LuffaCooldown()
+    if start == shownStart and duration == shownDuration then return end
+    shownStart, shownDuration = start, duration
+    if duration > 0 then
+        cooldown:SetCooldown(start, duration)
+    else
+        cooldown:Clear()
+    end
+end
+
+-- Border colour: pulsing gold normally, green once Luffa is ready to use.
+local lookReady
+local function SetReadyLook(ready)
+    if ready == lookReady then return end
+    lookReady = ready
+    if ready then
+        glow:SetColorTexture(0.1, 1, 0.1, 1)
+    else
+        glow:SetColorTexture(1, 0.82, 0, 1)
+    end
+end
+
+-- Using an item is a protected action, so it needs one of the game's secure
+-- buttons. This one sits invisibly on top of the icon only while Luffa is
+-- equipped and off cooldown; clicking it uses Luffa. The game does not let
+-- addons show or hide secure buttons in combat, so it hides itself securely
+-- the moment combat starts and is only touched by this addon out of combat.
+local useButton
+do
+    local ok, button = pcall(CreateFrame, "Button", "LuffaHelperUseButton", UIParent,
+        "SecureActionButtonTemplate,SecureHandlerStateTemplate")
+    if ok and button then
+        useButton = button
+        -- Not anchored to `frame`: anchoring a secure button to a frame makes
+        -- that frame protected too, and it could then not be hidden in combat.
+        -- SetUseButton copies the icon's position instead.
+        button:SetSize(52, 52)
+        button:SetFrameStrata("HIGH")
+        button:SetFrameLevel(frame:GetFrameLevel() + 20)
+        button:RegisterForClicks("AnyDown", "AnyUp")
+        button:SetAttribute("type", "item")
+        button:SetAttribute("item", "item:" .. LUFFA_ID)
+        button:SetAttribute("_onstate-combat",
+            [[ if newstate == 1 or newstate == "1" then self:Hide() end ]])
+        pcall(RegisterStateDriver, button, "combat", "[combat] 1; 0")
+        button:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText("Luffa Helper")
+            GameTooltip:AddLine("Click to use Luffa.", 1, 1, 1)
+            GameTooltip:Show()
+        end)
+        button:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        button:Hide()
+    end
+end
+
+local function SetUseButton(shown)
+    if not useButton or InCombatLockdown() then return end
+    if shown then
+        -- Sit exactly over the icon, wherever it has been dragged to.
+        local x, y = frame:GetCenter()
+        if x then
+            useButton:ClearAllPoints()
+            useButton:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
+        else
+            shown = false
+        end
+    end
+    if useButton:IsShown() ~= shown then useButton:SetShown(shown) end
+end
+
 -- Arrow below the icon: a gold quest-style arrow image (Arrow.tga, drawn
 -- pointing up) that is rotated to point at the water.
 local arrowBox = CreateFrame("Frame", nil, frame)
@@ -504,16 +586,25 @@ local function LuffaLine(inWater)
     if cd > 0 then
         return ("Luffa ready in %ds"):format(math.ceil(cd))
     end
-    return inWater and "|cff40ff40Use Luffa now!|r" or "Luffa is ready"
+    if not useButton then
+        return inWater and "|cff40ff40Use Luffa now!|r" or "Luffa is ready"
+    end
+    return inWater and "|cff40ff40Click the icon to use Luffa!|r"
+        or "|cff40ff40Luffa is ready|r - get in the water, then click it"
 end
 
 local function Refresh()
     if not ShouldShow() then
         frame:Hide()
+        SetUseButton(false)
         return
     end
     frame:Show()
     ShowDebuffs()
+    ShowCooldown()
+    local ready = LuffaEquipped() and LuffaCooldownLeft() == 0
+    SetReadyLook(ready)
+    SetUseButton(ready)
 
     if InWater() then
         ShowArrow(false)
@@ -592,6 +683,7 @@ driver:SetScript("OnUpdate", function(_, elapsed)
     if not ok then
         lastError = err
         frame:Hide()
+        pcall(SetUseButton, false)
     end
 
     if sinceLearn >= LEARN_EVERY then
