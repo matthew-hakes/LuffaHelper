@@ -6,3 +6,5 @@ water-tools export-ignore
 *.tga binary
 media export-ignore
 *.png binary
+*.gif binary
+*.jpg binary
